@@ -25,15 +25,32 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	// Import controller-runtime packages for setting up the manager, logging, health checks, metrics, and webhooks.
+	// This converts yaml config into go structs which k83 understand abd vice versa.
 	"k8s.io/apimachinery/pkg/runtime"
+
+	// utilruntime provides functions to handle panics and log errors in a consistent way across the codebase.
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+
+	// provides 'AddToScheme' functions for Kubernetes API types, allowing core objects of k8s  to be registered with the controller-runtime manager's scheme.
+	// Also this package register custom resource definitions (CRDs) with the manager's scheme, enabling the manager to recognize and work with these custom resources.
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
+	// ctrl is the main package of controller-runtime, providing the tools to set up and run a controller manager.
+	// Include the manage that handles caches , clients , webhooks and other controller related features.
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	// Authenication and authorization filters for the metrics server, ensuring that only authorized users can access the metrics endpoint.
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+
+	// Webhook package provides the tools to set up and manage webhooks, which are HTTP callbacks that can be used for validating and mutating Kubernetes resources.
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	computev1 "github.com/Yohansenanayake/simple-operators/api/v1"    // Custom reource API definitions for the operator
+	"github.com/Yohansenanayake/simple-operators/internal/controller" // Actual controller implementation for the operator, including the reconciliation logic.
 	// +kubebuilder:scaffold:imports
 )
 
@@ -43,8 +60,13 @@ var (
 )
 
 func init() {
+	// scheme(empty book) --> scheme(built-in types) --> scheme(custom API types) --> complete scheme
+
+	// Register the built in API types with the scheme
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	// Register the custom API types defined in the 'computev1' package with the scheme.
+	utilruntime.Must(computev1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -174,6 +196,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&controller.Ec2InstanceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create controller", "controller", "ec2instance")
+		os.Exit(1)
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
