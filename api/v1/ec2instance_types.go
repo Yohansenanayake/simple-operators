@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// TODO: create a sample ec2Instance manifest in the /doc folder
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -70,7 +71,7 @@ type Ec2Instance struct {
 
 	// metadata is a standard object metadata
 	// +optional
-	metav1.ObjectMeta `json:"metadata,omitzero"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
 	// spec defines the desired state of Ec2Instance
 	// +required
@@ -78,7 +79,7 @@ type Ec2Instance struct {
 
 	// status defines the observed state of Ec2Instance
 	// +optional
-	Status Ec2InstanceStatus `json:"status,omitzero"`
+	Status Ec2InstanceStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -86,7 +87,7 @@ type Ec2Instance struct {
 // Ec2InstanceList contains a list of Ec2Instance
 type Ec2InstanceList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitzero"`
+	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Ec2Instance `json:"items"`
 }
 
@@ -101,6 +102,16 @@ type VolumeConfig struct {
 	Type       string `json:"type,omitempty"`       // E.g., "gp2", "io1"
 	DeviceName string `json:"deviceName,omitempty"` // E.g., "/dev/sda1"
 	Encrypted  bool   `json:"encrypted,omitempty"`  // Whether the volume should be encrypted
+}
+
+type CreatedInstanceInfo struct {
+	InstanceID string       `json:"instanceId"`           // The ID of the created EC2 instance in AWS
+	PublicIP   string       `json:"publicIp,omitempty"`   // The public IP address associated with the created EC2 instance, if any
+	PrivateIP  string       `json:"privateIp"`            // The private IP address associated with the created EC2 instance
+	PublicDNS  string       `json:"publicDns,omitempty"`  // The public DNS name associated with the created EC2 instance, if any
+	PrivateDNS string       `json:"privateDns"`           // The private DNS name associated with the created EC2 instance,
+	State      string       `json:"state"`                // The current state of the created EC2 instance (e.g., "Pending", "Running")
+	LaunchTime *metav1.Time `json:"launchTime,omitempty"` // The time when the created EC2 instance was launched
 }
 
 func init() {
