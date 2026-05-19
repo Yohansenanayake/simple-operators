@@ -68,6 +68,30 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Handle deletion with finalizer
+	if !ec2Instance.DeletionTimestamp.IsZero() {
+		l.Info("=== Deletion Detected via DeletionTimestamp & Triggering Deletion===")
+		_, err := deleteEc2Instance(ctx, ec2Instance)
+		if err != nil {
+			l.Error(err, "Failed to delete EC2 instance in AWS")
+			// trigger retry in k8s with backoff
+			return ctrl.Result{}, err
+		}
+
+		// Remove the finalizer so Kubernetes can delete the CR
+		controllerutil.RemoveFinalizer(ec2Instance, ec2InstanceFinalizer)
+		if err := r.Update(ctx, ec2Instance); err != nil {
+			l.Error(err, "Failed to remove the finalizer")
+			// trigger retry in k8s with backoff
+			return ctrl.Result{}, err
+		}
+
+		// at this point the instance state is terminated and finalizer is removed
+		l.Info("=== EC2 INSTANCE DELETED SUCCESSFULLY AND FINALIZER REMOVED - This will trigger a NEW Reconcile loop ====")
+		return ctrl.Result{}, nil
+	}
+
+	// Handling idempotency in creation - check if instance already exists by looking at the status.instanceID of the CR
 	// check if we already have an instance ID in the status
 	// This prevents creating multiple EC2 instances if the Reconcile function is triggered  multiple times for the same CR (CR modified) before the status is updated with the instance ID.
 	if ec2Instance.Status.InstanceID != "" {
