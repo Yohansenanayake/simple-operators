@@ -23,10 +23,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	computev1 "github.com/Yohansenanayake/simple-operators/api/v1"
 )
+
+const ec2InstanceFinalizer = "ec2instance.yohancloud.com"
 
 // Ec2InstanceReconciler reconciles a Ec2Instance object
 type Ec2InstanceReconciler struct {
@@ -65,7 +68,7 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
-	// check if we already have an instance ID in the status 
+	// check if we already have an instance ID in the status
 	// This prevents creating multiple EC2 instances if the Reconcile function is triggered  multiple times for the same CR (CR modified) before the status is updated with the instance ID.
 	if ec2Instance.Status.InstanceID != "" {
 		l.Info("Instance already exists for this CR, skipping creation", "instanceID", ec2Instance.Status.InstanceID)
@@ -75,13 +78,16 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	l.Info("==== Creating New Instance ====")
 
 	// Add a finalizer so Kubernetes keeps the Ec2Instance during deletion until the controller cleans up the external EC2 instance.
-	l.Info("=== ABOUT TO ADD FINALIZER ===")
-	ec2Instance.Finalizers = append(ec2Instance.Finalizers, "ec2instance.yohancloud.com")
-	if err := r.Update(ctx, ec2Instance); err != nil {
-		l.Error(err, "Failed to add finalizer")
-		return ctrl.Result{}, err // Result{} is ignored since err
+	if !controllerutil.ContainsFinalizer(ec2Instance, ec2InstanceFinalizer) {
+		l.Info("=== ABOUT TO ADD FINALIZER ===")
+		controllerutil.AddFinalizer(ec2Instance, ec2InstanceFinalizer)
+		if err := r.Update(ctx, ec2Instance); err != nil {
+			l.Error(err, "Failed to add finalizer")
+			return ctrl.Result{}, err // Result{} is ignored since err
+		}
+		l.Info("==== FINALIZER ADDED - This update will trigger a NEW Reconcile loop ====")
+		return ctrl.Result{}, nil
 	}
-	l.Info("==== FINALIZER ADDED - This update will trigger a NEW Reconcile loop , but current reconcile continues ====")
 
 	l.Info(" === CONTINUE WITH EC2 INSTANCE CREATION IN CURRENT RECONCILE ====")
 	createdInstanceInfo, err := createEc2Instance(ec2Instance)
@@ -94,6 +100,11 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		"instanceID", createdInstanceInfo.InstanceID,
 		"state", createdInstanceInfo.State)
 
+	if err := r.Get(ctx, req.NamespacedName, ec2Instance); err != nil {
+		l.Error(err, "Failed to re-fetch EC2Instance before status update")
+		return ctrl.Result{}, err
+	}
+
 	// Update the status of the CR with the instance information
 	ec2Instance.Status.InstanceID = createdInstanceInfo.InstanceID
 	ec2Instance.Status.State = createdInstanceInfo.State
@@ -102,6 +113,11 @@ func (r *Ec2InstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	ec2Instance.Status.PublicDNS = createdInstanceInfo.PublicDNS
 	ec2Instance.Status.PrivateDNS = createdInstanceInfo.PrivateDNS
 	ec2Instance.Status.LaunchTime = createdInstanceInfo.LaunchTime
+
+	if err := r.Status().Update(ctx, ec2Instance); err != nil {
+		l.Error(err, "Failed to update EC2Instance status")
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, nil
 }
